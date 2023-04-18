@@ -19,7 +19,6 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand"
   },
   "dependencies": {
-    "@discordjs/opus": "github:discordjs/opus#v0.3.3",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@google-cloud/speech": "^5.4.0",
     "@nestjs/common": "^9.0.0",
