@@ -5,6 +5,10 @@ import { Client, LocalAuth, MessageMedia } from 'whatsapp-web.js';
 import * as qrcode from 'qrcode';
 import { ReplyMessageDto } from '../dto/reply-message.dto';
 import { getCannotGenerateImageError } from '../helpers/error-messages';
+import fs from 'fs';
+import path from 'path';
+import { path as appRoot } from 'app-root-path';
+
 
 @Injectable()
 export class RouterService {
@@ -50,24 +54,85 @@ export class RouterService {
     });
 
     this.client.on('message', async (msg) => {
+      console.log('Mensagem recebida:', msg.type);
+      if (msg.id.fromMe) {
+        return;
+      }
+    
       const command = msg.body.toLowerCase().split(' ')[0];
       const to = msg.from;
       const isGroupMessage = msg.from.split('@')[1] === 'g.us';
-
+    
       const handler = this.commands.get(command);
       if (handler) {
         return await handler(msg, to);
-        
       }
-
+    
       if (isGroupMessage && command !== 'zara') {
         return;
       }
+      
+      function saveMediaToFile(mediaData, fileName) {
+        return new Promise<string>((resolve, reject) => {
+          const tempAudioFile = `./temp/${msg.id.id}.opus`;
+          const filePath = path.join(appRoot, tempAudioFile);
+
+          
+          
+          console.log('Salvando o arquivo de áudio em:', filePath);
+          fs.writeFile(filePath, mediaData, "base64", (err) => {
+            console.log('Arquivo de áudio salvo com sucesso:', filePath);
+            if (err) {
+              console.error('Falha ao salvar o arquivo de áudio:', err);
+              fs.access(filePath, fs.constants.R_OK | fs.constants.W_OK, (err) => {
+                if (err) {
+                  console.error('O aplicativo não tem permissão para ler e gravar no diretório', filePath);
+                } else {
+                  console.log('Aplicativo com permissão para ler e gravar no diretório', filePath);
+                }
+              });
+              reject(err);
+            } else {
+              console.log('Arquivo de áudio salvo com sucesso:', filePath);
+              resolve(filePath);
+            }
+          });
+        });
+      }
+      
+          
+      // Verifique se a mensagem é do tipo de áudio após as outras verificações.
+      let messageContent;
+      if (msg.type === 'ptt') {
+        console.log('Mensagem de áudio recebida');
+        
+        try {
+          const media = await msg.downloadMedia();
+          //console.log('Mídia baixada com sucesso:', media);
+          const uniqueFilename = new Date().toISOString() + '_' + Math.random().toString(36).substr(2, 9) + '.opus';
+          const filePath = await saveMediaToFile(media.data, uniqueFilename);
+
+          console.log('Arquivo de áudio salvo com sucesso:', filePath);
+          
+          console.log('Convertendo o áudio em texto...');
+          messageContent = await this.messageService.convertAudioToText(filePath);
+          console.log('Texto transcrito do áudio:', messageContent);
+        } catch (error) {
+          console.error('Falha ao salvar o arquivo de áudio:', error);
+        }
+      } else {
+        console.log('Mensagem não é de áudio, processando o corpo da mensagem...');
+        messageContent = msg.body;
+        console.log('Conteúdo da mensagem:', messageContent);
+      }
+
+
 
       const response = await this.messageService.createMessage({
         from: msg.from,
-        body: msg.body,
+        body: messageContent,
       });
+    
       try {
         if (response.length > 1400) {
           const chunks = response.match(/.{1,1400}/g);
@@ -87,6 +152,7 @@ export class RouterService {
         console.log(e);
       }
     });
+    
 
     this.client.initialize();
   }

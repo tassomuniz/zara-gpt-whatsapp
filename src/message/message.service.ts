@@ -11,6 +11,8 @@ import {
   getHelperSuporterMessage,
 } from './helpers/chat-messages';
 import { getServiceUnavailableError } from './helpers/error-messages';
+import fs from 'fs';
+import ffmpeg from 'fluent-ffmpeg';
 
 @Injectable()
 export class MessageService {
@@ -19,6 +21,50 @@ export class MessageService {
     private readonly openAiService: OpenAiService,
     private readonly customerService: CustomerService,
   ) {}
+
+  async convertAudioToText(inputFile: string): Promise<string> {
+    const outputFile = './temp/converted_audio.wav';
+  
+    console.log('Iniciando a conversão do áudio'); // Adicionando mensagem de depuração
+    
+    // Conversão do arquivo de áudio para o formato correto usando ffmpeg
+    return new Promise(async (resolve, reject) => {
+      ffmpeg(inputFile)
+        .noVideo()
+        .output(outputFile)
+        .audioChannels(1)
+        .audioFrequency(24000)
+        .audioCodec('pcm_s16le')
+        .format('wav')
+        .on('end', async () => {
+          try {
+            console.log('Conversão do áudio concluída');
+            // Carregar o arquivo de áudio convertido
+            const audioData = fs.readFileSync(outputFile);
+  
+            // Enviar o arquivo de áudio para a API Whisper da OpenAI
+            const response = await this.openAiService.recognizeAudio(audioData);
+            console.log('Resposta do Whisper:', response);
+  
+            if (response.error) {
+              reject(response.error);
+            } else {
+              resolve(response.transcription);
+            }
+          } catch (error) {
+            console.log('Erro na conversão do áudio:', error);
+            reject(error);
+          }
+        })
+        .on('error', (err) => {
+          console.log('Erro no FFmpeg:', err);
+          console.error('Detalhes do erro:', err.message); // Adicionando mensagem de depuração do erro
+          reject(err);
+        })
+        .run();
+    });
+  }
+  
 
   async createMessage(incomingMessageDto: IncomingMessageDto) {
     const user = incomingMessageDto.from;
